@@ -9,7 +9,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import RunLog, write_json  # noqa: E402
+from common import RunLog, is_closed_status, write_json  # noqa: E402
 
 COLS = ["key", "org", "source", "title", "posted_date", "apply_start", "apply_end", "status",
         "type", "region", "correction_of", "is_correction", "attachments", "detail_url", "collected_at"]
@@ -40,6 +40,21 @@ def link_corrections(rows):
                 r["correction_of"] = hit
 
 
+def drop_closed(rows, log=None):
+    """상태가 '접수마감'인 행을 뺀다. 반환: (남은 행, 뺀 건수). log 를 주면 그 출처의 수집 → 제외로 옮겨 센다."""
+    keep, dropped = [], 0
+    for r in rows:
+        if is_closed_status(r.get("status")):
+            dropped += 1
+            if log is not None and r.get("source"):
+                s = log.src(r["source"])
+                s["수집"] = max(0, s["수집"] - 1)
+                s["제외"] += 1
+        else:
+            keep.append(r)
+    return keep, dropped
+
+
 def load_prev(out):
     p = os.path.join(out, "list.json")
     if os.path.exists(p):
@@ -60,9 +75,15 @@ def main():
     ap.add_argument("--no-download", action="store_true", help="첨부 PDF를 받지 않음")
     ap.add_argument("--dump-html", action="store_true", help="실패 시 원본 HTML을 out/debug 에 저장")
     ap.add_argument("--no-detail", action="store_true", help="SH·GH 상세 화면(접수기간·첨부)을 읽지 않음")
+    ap.add_argument("--skip-closed", action="store_true",
+                    help="상태가 '접수마감'인 공고는 모으지 않고, 이전 목록에 남은 마감 공고도 뺌 "
+                         "(GH는 상세·첨부를 읽기 전에 거름. SH는 상태 칸이 없어 거르지 못함)")
     ap.add_argument("--lh-files", action="store_true", help="LH 공고 첨부 PDF를 상세 API로 받음(이미 받은 공고는 건너뜀)")
     ap.add_argument("--extract", action="store_true",
                     help="저장된 공고문 PDF에서 자격 조건(소득·자산·계층 등)을 뽑아 열로 붙임 (pdftotext 필요)")
+    ap.add_argument("--build-webapp", action="store_true",
+                    help="수집이 끝나면 자격진단 웹앱 데이터(data/notices.json·notices_bundle.js)를 새로 만든다 "
+                         "(웹앱 폴더가 옆에 있을 때만, --out 기본값 out 일 때만)")
     ap.add_argument("--wp-posts", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "wp_posts.csv"),
                     help="게시한 글 주소 표(key,wp_post_url). 웹앱 화면 C가 쓴다")
     a = ap.parse_args()
@@ -106,7 +127,10 @@ def main():
         import collect_gh
         guarded("GH", lambda: collect_gh.collect(log, a.out, known_keys=known, max_pages=a.max_pages,
                                                  download=not a.no_download, detail=not a.no_detail,
-                                                 dump=a.dump_html))
+                                                 dump=a.dump_html, skip_closed=a.skip_closed))
+
+    if a.skip_closed:
+        rows, n_rows = drop_closed(rows, log)
 
     now = time.strftime("%Y-%m-%d %H:%M")
     merged = dict(prev)           # 이전 목록 위에 이번 결과를 덮어 쓴다
@@ -124,6 +148,10 @@ def main():
             r["attachments"] = old.get("attachments", "")
         merged[r["key"]] = r
     final = list(merged.values())
+    if a.skip_closed:             # 이전 목록에 남아 있던 마감 공고도 뺀다(새로 마감된 것 포함)
+        final, n_prev = drop_closed(final)
+        if n_rows or n_prev:
+            log.note(f"마감 공고 제외(--skip-closed): 이번에 받은 목록에서 {n_rows}건, 이전 목록에서 {n_prev}건")
     link_corrections(final)
     import extract_terms
     if a.extract:
@@ -146,6 +174,25 @@ def main():
     with open(os.path.join(a.out, "run_log.md"), "w", encoding="utf-8") as f:
         f.write(log.to_markdown(extra))
     print(log.to_markdown(extra))
+    if a.build_webapp:
+        build_webapp(a.out)
+
+
+def build_webapp(out_dir):
+    """웹앱의 build_data.py 는 out/list.csv 를 읽어 notices.json·notices_bundle.js 를 만든다."""
+    import subprocess
+    here = os.path.dirname(os.path.abspath(__file__))
+    script = os.path.normpath(os.path.join(here, "..", "..", "자격진단웹앱", "scripts", "build_data.py"))
+    default_out = os.path.normpath(os.path.join(here, "..", "out"))
+    if os.path.normpath(os.path.abspath(out_dir)) != default_out:
+        print("웹앱 데이터 갱신 건너뜀: --out 이 기본 out 폴더가 아님")
+        return
+    if not os.path.exists(script):
+        print("웹앱 데이터 갱신 건너뜀: 자격진단웹앱/scripts/build_data.py 없음")
+        return
+    r = subprocess.run([sys.executable, script], capture_output=True, text=True)
+    print("웹앱 데이터 갱신" + (" 완료" if r.returncode == 0 else " 실패"))
+    print((r.stdout if r.returncode == 0 else r.stderr).strip()[:600])
 
 
 if __name__ == "__main__":

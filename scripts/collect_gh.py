@@ -13,8 +13,8 @@ import re
 import urllib.parse
 from html.parser import HTMLParser
 
-from common import (clean, date_range, dump_html, http_get, is_correction_title, is_target_title,
-                    norm_date, save_attachment, skip_attachment)
+from common import (clean, date_range, dump_html, http_get, is_closed_status, is_correction_title,
+                    is_target_title, norm_date, save_attachment, skip_attachment)
 
 SOURCE = "GH"
 HOST = "https://apply.gh.or.kr"
@@ -109,7 +109,7 @@ def parse_detail(html):
     return files, s, e
 
 
-def collect(log, out_dir, known_keys=(), max_pages=3, download=True, detail=True, dump=False):
+def collect(log, out_dir, known_keys=(), max_pages=3, download=True, detail=True, dump=False, skip_closed=False):
     rows = []
     st = log.src(SOURCE)
     for menu, menu_name in MENUS.items():
@@ -138,6 +138,9 @@ def collect(log, out_dir, known_keys=(), max_pages=3, download=True, detail=True
                     break
                 ok, _ = is_target_title(it["title"])
                 if not ok or "상가" in it["biz"]:
+                    st["제외"] += 1
+                    continue
+                if skip_closed and is_closed_status(it["status"]):   # 상세·첨부를 읽기 전에 뺀다
                     st["제외"] += 1
                     continue
                 q = urllib.parse.urlencode({"pbancNo": it["pbancNo"], "pbancKndCd": it["kind_cd"],

@@ -14,7 +14,7 @@ LH · SH · GH(+마이홈 API)의 주택 모집공고를 모아 **한 장의 목
    ```
 4. `out/` 에 결과가 생깁니다: `list.csv`, `list.json`, `run_log.md`, `attachments/`.
 
-일부만 돌리기: `--only sh,gh` · 자격 조건 뽑기: `--extract` · 첨부 안 받기: `--no-download` · 상세 화면 안 읽기: `--no-detail` · 화면 구조가 어긋날 때 원본 저장: `--dump-html` (`out/debug/`) · SH 분양 게시판도: `--sh-boards 2,1`
+웹앱 데이터 갱신: `--build-webapp` (수집이 끝나면 `자격진단웹앱/scripts/build_data.py`를 돌려 `data/notices.json`·`notices_bundle.js`를 새로 만듭니다. 웹앱 폴더가 이 폴더 옆에 있고 `--out`이 기본값일 때만 동작하며, 아니면 건너뜁니다) · 마감 공고 빼기: `--skip-closed` (상태가 `접수마감`인 공고를 모으지 않고 이전 목록에 남은 것도 뺍니다. GH는 상세·첨부를 읽기 전에 거릅니다. SH 게시판은 상태 칸이 없어 거르지 못합니다) · 일부만 돌리기: `--only sh,gh` · 자격 조건 뽑기: `--extract` · 첨부 안 받기: `--no-download` · 상세 화면 안 읽기: `--no-detail` · 화면 구조가 어긋날 때 원본 저장: `--dump-html` (`out/debug/`) · SH 분양 게시판도: `--sh-boards 2,1`
 
 두 번째 실행부터는 `out/list.json`을 기억해 두고 **새 글만** 상세·첨부를 읽습니다. 첫 실행은 SH·GH 상세를 2초 간격으로 읽어 몇 분 걸립니다.
 

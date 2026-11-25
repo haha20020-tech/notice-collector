@@ -72,6 +72,46 @@ def t_gh_real_excerpt():
     assert rows == [] and not err   # 마지막 쪽 다음 = 정상 종료
 
 
+def t_skip_closed():
+    """--skip-closed: 접수마감 공고는 GH에서 상세·첨부를 읽기 전에 빼고, 이전 목록에 남은 마감 공고도 뺀다."""
+    fx = os.path.join(os.path.dirname(__file__), "fixtures")
+    page1 = open(os.path.join(fx, "gh_list_real_excerpt.html"), encoding="utf-8").read()
+    calls = []
+
+    def fake(url, **kw):
+        calls.append(url)
+        if kw.get("binary"):
+            return b"%PDF-1.4", "", ""
+        if "selectPbancRentHouseList" in url:
+            return page1 if ("pageIndex=1" in url and "sr7150" in url) else "<table><tr><th>공고명</th></tr></table>"
+        if "selectPbancDetailView" in url:
+            return GH_DETAIL
+        raise AssertionError(url)
+
+    old = collect_gh.http_get
+    collect_gh.http_get = fake
+    try:
+        out = tempfile.mkdtemp()
+        base = {r["key"] for r in collect_gh.collect(common.RunLog(), out, detail=False, download=False)}
+        assert "GH-839" in base, base                      # 기본: 마감 공고도 모은다
+        calls.clear()
+        log = common.RunLog()
+        got = {r["key"] for r in collect_gh.collect(log, out, detail=True, download=False, skip_closed=True)}
+        assert "GH-839" not in got and "GH-843" in got, got
+        assert not any("pbancNo=839" in u for u in calls), "마감 공고의 상세는 읽지 않아야 함"
+        assert log.src("GH")["제외"] >= 1
+    finally:
+        collect_gh.http_get = old
+    # run_all.drop_closed: 상태 칸이 비어 있는 행(SH)은 남기고, 수집 → 제외로 옮겨 센다
+    log = common.RunLog()
+    log.src("LH")["수집"] = 2
+    rows = [{"key": "a", "source": "LH", "status": "접수마감"}, {"key": "b", "source": "LH", "status": "공고중"},
+            {"key": "c", "source": "SH", "status": ""}]
+    keep, n = run_all.drop_closed(rows, log)
+    assert [r["key"] for r in keep] == ["b", "c"] and n == 1
+    assert log.src("LH") == {"수집": 1, "제외": 1, "실패": 0}, log.src("LH")
+
+
 def t_end_to_end():
     out = tempfile.mkdtemp()
     calls = []

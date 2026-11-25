@@ -36,6 +36,14 @@ def is_correction_title(title):
     return any(w in (title or "") for w in CORRECTION_WORDS)
 
 
+CLOSED_STATUS = ("접수마감",)
+
+
+def is_closed_status(status):
+    """목록에 적힌 상태가 '접수마감'인지. SH 게시판은 상태 칸이 없어(빈칸) 걸러지지 않는다."""
+    return (status or "").strip() in CLOSED_STATUS
+
+
 _OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
 _ROBOTS = {}
 
